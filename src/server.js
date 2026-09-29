@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import pool from './db.js';
+import { loginAdmin, verifyAdminToken } from './adminAuth.js';
+import adminRoutes from './adminRoutes.js';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -22,6 +24,76 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'shoe-store-api' });
 });
 
+app.post('/api/admin/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email?.trim() || !password) {
+      return res.status(400).json({
+        message: 'Email and password are required.',
+      });
+    }
+
+    const token = await loginAdmin(
+      email.trim(),
+      password
+    );
+
+    if (!token) {
+      return res.status(401).json({
+        message: 'Invalid admin credentials.',
+      });
+    }
+
+    res.json({
+      message: 'Admin login successful.',
+      token,
+    });
+  } catch (error) {
+    console.error('Admin login error:', error);
+
+    res.status(500).json({
+      message: 'Unable to log in right now.',
+    });
+  }
+});
+
+function requireAdmin(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({
+        message: 'Admin authentication required.',
+      });
+    }
+
+    const token = authHeader.slice(7);
+    const admin = verifyAdminToken(token);
+
+    if (admin.role !== 'admin') {
+      return res.status(403).json({
+        message: 'Admin access required.',
+      });
+    }
+
+    req.admin = admin;
+    next();
+  } catch (error) {
+    return res.status(401).json({
+      message: 'Invalid or expired admin token.',
+    });
+  }
+}
+
+app.use('/api/admin', requireAdmin, adminRoutes);
+app.get('/api/admin/test', requireAdmin, (req, res) => {
+  res.json({
+    ok: true,
+    message: 'Admin authentication is working.',
+    admin: req.admin.email,
+  });
+});
 app.get('/api/products', async (_req, res) => {
   try {
     const result = await pool.query(`
