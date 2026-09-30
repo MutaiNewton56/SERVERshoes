@@ -260,8 +260,15 @@ router.delete('/products/:id', async (req, res) => {
       message: 'Product deleted successfully.',
       product: result.rows[0],
     });
-  } catch (error) {
+    } catch (error) {
     console.error('Delete product error:', error);
+
+    if (error.code === '23503') {
+      return res.status(409).json({
+        message:
+          'This product cannot be deleted because it is included in existing orders. You can edit it or set its stock to 0 instead.',
+      });
+    }
 
     res.status(500).json({
       message: 'Unable to delete product.',
