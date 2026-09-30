@@ -1,7 +1,25 @@
 import express from 'express';
 import pool from './db.js';
+import multer from 'multer';
+import supabase from './supabase.js';
+import crypto from 'crypto';
+import path from 'path';
 
 const router = express.Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      return cb(new Error('Only image files are allowed.'));
+    }
+
+    cb(null, true);
+  },
+});
 
 // Get all products
 router.get('/products', async (_req, res) => {
@@ -466,5 +484,50 @@ router.get('/dashboard', async (_req, res) => {
   }
 });
 
+router.post('/products/upload-image', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        message: 'Please select an image.',
+      });
+    }
+
+    const extension = path.extname(req.file.originalname).toLowerCase();
+
+    const fileName = `${crypto.randomUUID()}${extension}`;
+    const filePath = `products/${fileName}`;
+
+    const { error } = await supabase.storage
+      .from('product-images')
+      .upload(filePath, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: false,
+      });
+
+    if (error) {
+      console.error('Supabase image upload error:', error);
+
+      return res.status(500).json({
+        message: 'Unable to upload product image.',
+      });
+    }
+
+    const { data } = supabase.storage
+      .from('product-images')
+      .getPublicUrl(filePath);
+
+    res.status(201).json({
+      message: 'Product image uploaded successfully.',
+      url: data.publicUrl,
+      path: filePath,
+    });
+  } catch (error) {
+    console.error('Product image upload error:', error);
+
+    res.status(500).json({
+      message: 'Unable to upload product image.',
+    });
+  }
+});
 
 export default router;
