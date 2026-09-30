@@ -407,4 +407,64 @@ router.get('/messages', async (_req, res) => {
   }
 });
 
+router.get('/dashboard', async (_req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM products) AS total_products,
+
+        (SELECT COUNT(*)::int FROM orders) AS total_orders,
+
+        (
+          SELECT COUNT(*)::int
+          FROM orders
+          WHERE status = 'pending'
+        ) AS pending_orders,
+
+        (
+          SELECT COUNT(*)::int
+          FROM messages
+        ) AS total_messages,
+
+        (
+          SELECT COALESCE(SUM(total), 0)
+          FROM orders
+          WHERE status != 'cancelled'
+        ) AS total_sales
+    `);
+
+    const stats = result.rows[0];
+
+    const recentOrdersResult = await pool.query(`
+      SELECT
+        id,
+        customer_name,
+        total,
+        status,
+        created_at
+      FROM orders
+      ORDER BY created_at DESC
+      LIMIT 5
+    `);
+
+    res.json({
+      stats: {
+        totalProducts: stats.total_products,
+        totalOrders: stats.total_orders,
+        pendingOrders: stats.pending_orders,
+        totalMessages: stats.total_messages,
+        totalSales: Number(stats.total_sales),
+      },
+      recentOrders: recentOrdersResult.rows,
+    });
+  } catch (error) {
+    console.error('Admin dashboard error:', error);
+
+    res.status(500).json({
+      message: 'Unable to load dashboard data.',
+    });
+  }
+});
+
+
 export default router;
