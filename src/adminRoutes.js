@@ -384,4 +384,27 @@ router.patch('/orders/:id/status', async (req, res) => {
   }
 });
 
+router.get('/messages', async (_req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        id,
+        name,
+        email,
+        message,
+        created_at
+      FROM messages
+      ORDER BY created_at DESC
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Admin messages error:', error);
+
+    res.status(500).json({
+      message: 'Unable to load messages.',
+    });
+  }
+});
+
 export default router;
