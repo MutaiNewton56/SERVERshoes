@@ -276,4 +276,112 @@ router.delete('/products/:id', async (req, res) => {
   }
 });
 
+router.get('/orders', async (_req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        o.id,
+        o.customer_name,
+        o.email,
+        o.phone,
+        o.address,
+        o.total,
+        o.status,
+        o.created_at,
+        o.updated_at,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', oi.id,
+              'product_id', oi.product_id,
+              'product_name', p.name,
+              'size', oi.size,
+              'quantity', oi.quantity,
+              'price', oi.price
+            )
+            ORDER BY oi.id
+          ) FILTER (WHERE oi.id IS NOT NULL),
+          '[]'
+        ) AS items
+      FROM orders o
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      LEFT JOIN products p ON p.id = oi.product_id
+      GROUP BY o.id
+      ORDER BY o.created_at DESC
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Admin orders error:', error);
+
+    res.status(500).json({
+      message: 'Unable to load orders.',
+    });
+  }
+});
+
+router.patch('/orders/:id/status', async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const { status } = req.body;
+
+    const allowedStatuses = [
+      'pending',
+      'confirmed',
+      'shipped',
+      'delivered',
+      'cancelled',
+    ];
+
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({
+        message: 'Invalid order ID.',
+      });
+    }
+
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        message: 'Invalid order status.',
+      });
+    }
+
+    const result = await pool.query(
+      `
+        UPDATE orders
+        SET status = $1,
+            updated_at = NOW()
+        WHERE id = $2
+        RETURNING
+          id,
+          customer_name,
+          email,
+          phone,
+          address,
+          total,
+          status,
+          created_at,
+          updated_at
+      `,
+      [status, orderId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        message: 'Order not found.',
+      });
+    }
+
+    res.json({
+      message: 'Order status updated successfully.',
+      order: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Update order status error:', error);
+
+    res.status(500).json({
+      message: 'Unable to update order status.',
+    });
+  }
+});
+
 export default router;
